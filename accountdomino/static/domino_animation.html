@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>AccountDomino 경로 시뮬레이션</title>
+<style>
+  :root {
+    /* 어두운 남색 바탕 + 절제된 청록 강조. 비인가 접근=빨강, 차단=초록 */
+    --bg: #0f1b2d; --fg: #e6edf5; --muted: #a7b4c6; --line: #3a5270; --node: #172a42; --node-line: #3a5270;
+    --accent: #4fd1c1; --accent-strong: #13786d;
+    --pass: #c9d4e2; --block: #4ade80; --block-line: #3fbf73; --block-bg: #10301f;
+    --success: #fca5a5; --success-line: #ef5b5b; --success-bg: #3b1620;
+    --err: #a7b4c6; --token: #4fd1c1; --focus: #4fd1c1;
+    --font: "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 17px; line-height: 1.5; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 4px 0 8px; }
+  .info { margin: 0 0 4px; }
+  .info b { font-weight: 700; }
+  .assume { margin: 0 0 16px; color: var(--muted); font-size: 16px; }
+  .dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--token); margin-right: 8px; vertical-align: 0; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-bottom: 8px; }
+  .seg { display: inline-flex; border: 1px solid var(--node-line); border-radius: 6px; overflow: hidden; }
+  button {
+    font: inherit; font-size: 16px; color: var(--fg); background: var(--node); border: 1px solid var(--node-line);
+    border-radius: 6px; padding: 6px 16px; cursor: pointer; min-height: 40px;
+  }
+  .seg button { border: 0; border-radius: 0; border-right: 1px solid var(--node-line); }
+  .seg button:last-child { border-right: 0; }
+  .seg button[aria-pressed="true"] { background: var(--accent-strong); color: #ffffff; }
+  button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .view { font-size: 18px; font-weight: 700; margin-left: auto; }
+  .view span { font-weight: 400; color: var(--muted); font-size: 16px; margin-left: 8px; }
+  svg { display: block; width: 100%; max-width: 1100px; height: auto; margin: 0 auto; }
+  .lane-path { fill: none; stroke: var(--line); stroke-width: 2; }
+  .lane-path.err { stroke-dasharray: 6 6; }
+  .node rect { fill: var(--node); stroke: var(--node-line); stroke-width: 1.5; }
+  .node .title { font-size: 18px; font-weight: 700; fill: var(--fg); }
+  .node .sub { font-size: 16px; fill: var(--muted); }
+  .node.changed rect { stroke: var(--accent); stroke-width: 2; }
+  .node.checking rect { stroke: var(--accent); stroke-width: 2.5; }
+  .node.checking .sub { fill: var(--fg); }
+  .node.passed .sub { fill: var(--pass); }
+  .node.blocked rect { fill: var(--block-bg); stroke: var(--block-line); stroke-width: 2.5; }
+  .node.blocked .sub { fill: var(--block); font-weight: 700; }
+  .node.success rect { fill: var(--success-bg); stroke: var(--success-line); stroke-width: 2.5; }
+  .node.success .sub { fill: var(--success); font-weight: 700; }
+  .node.warn rect { stroke: var(--fg); stroke-width: 2; stroke-dasharray: 6 4; }
+  .node.warn .sub { fill: var(--fg); font-weight: 700; }
+  .node.err rect { stroke: var(--muted); stroke-dasharray: 6 4; }
+  .node.err .sub { fill: var(--muted); font-weight: 700; }
+  .change { font-size: 16px; fill: var(--accent); font-weight: 700; }
+  .reason { font-size: 16px; font-weight: 700; }
+  .reason.block { fill: var(--block); } .reason.success { fill: var(--success); }
+  .reason.warn { fill: var(--fg); } .reason.err { fill: var(--err); }
+  .owner .fig { fill: #7f8fa6; }
+  .owner text { font-size: 17px; font-weight: 700; fill: var(--fg); text-anchor: middle; }
+  .owner .hint { font-size: 16px; font-weight: 400; fill: var(--muted); }
+  .token { fill: var(--token); stroke: var(--bg); stroke-width: 3; }
+  #sentence { min-height: 30px; margin: 12px 0 0; font-size: 18px; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="info"><i class="dot" aria-hidden="true"></i><b>유출 정보로 시도하는 로그인</b>: 아이디 <b id="leak-user"></b>, <span id="leak-pw"></span> (출처: <span id="leak-src"></span>) — 변경 전·후에 같은 정보로 시도합니다.</p>
+  <p class="assume">가정: 로그인 시도자에게는 OTP·휴대폰 같은 추가 인증 수단이 없습니다.</p>
+  <div class="bar">
+    <div class="seg" role="group" aria-label="보기 선택">
+      <button data-mode="before">변경 전</button>
+      <button data-mode="after">변경 후</button>
+      <button data-mode="seq">전후 비교</button>
+    </div>
+    <button id="toggle">일시정지</button>
+    <button id="replay">다시 재생</button>
+    <div class="view" aria-live="polite"><b id="view-label"></b><span id="view-state"></span></div>
+  </div>
+  <svg id="stage" role="img" aria-label="서비스별 로그인 경로 애니메이션"></svg>
+  <p id="sentence" aria-live="polite"></p>
+</div>
+
+<script>
+window.DOMINO = __DATA__;
+(function () {
+  "use strict";
+  const D = window.DOMINO;
+  const NS = "http://www.w3.org/2000/svg";
+  const STAGES = ["service", "password", "mfa", "access"];
+  const STAGE_X = { service: 300, password: 525, mfa: 750, access: 975 };   // 1100 폭에서 실제 크기(16~18px)로 보이도록
+  const STAGE_TITLE = { password: "아이디·비밀번호 확인", mfa: "MFA", access: "접근 결과" };
+  const VIEW_W = 1100, NODE_W = 200, NODE_H = 64, TOP = 74, GAP = 136, START_X = 112, LABEL_W = 215;
+  // 자연 시간 기준 타임라인(ms). 보기마다 전체가 약 TARGET 이 되도록 비례 조정한다.
+  const SPEED = 0.2;                     // px/ms
+  const PAUSE = { service: 800, password: 1600, mfa: 1600, access: 1200 };
+  const STAGGER = 400;
+  const TARGET = 11000, MIN_SCALE = 1, MAX_SCALE = 2.6;
+  const HOLD = 2500;                     // 전후 비교에서 변경 전 결과를 보여 주는 시간
+
+  const svg = document.getElementById("stage");
+  const lanesCount = D.profiles.before.lanes.length;
+  const H = TOP + GAP * (lanesCount - 1) + NODE_H / 2 + 44;
+  const CY = TOP + GAP * (lanesCount - 1) / 2;
+  svg.setAttribute("viewBox", `0 0 ${VIEW_W} ${H}`);
+
+  document.getElementById("leak-user").textContent = D.leaked.username;
+  document.getElementById("leak-pw").textContent = D.leaked.password_label;
+  document.getElementById("leak-src").textContent = D.leaked.service;
+
+  const st = { mode: "seq", view: "before", clock: 0, playing: false, last: null, lanes: [], scale: 1, end: 0, doneAt: null };
+
+  function el(name, attrs, parent) {
+    const e = document.createElementNS(NS, name);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function text(parent, x, y, cls, str) {
+    const t = el("text", { x, y, class: cls, "text-anchor": "middle" }, parent);
+    t.textContent = str;
+    return t;
+  }
+  // 글자가 폭을 넘으면 말줄임표로 줄인다(잘림 방지).
+  function fit(t, max) {
+    const full = t.textContent;
+    if (t.getComputedTextLength() <= max) return;
+    let s = full;
+    while (s.length > 1 && t.getComputedTextLength() > max) { s = s.slice(0, -1); t.textContent = s + "…"; }
+    const title = el("title", {}, t); title.textContent = full;
+  }
+  function setSub(node, str) { node.sub.textContent = str; fit(node.sub, NODE_W - 20); }
+
+  function initialSub(lane, stage) {
+    if (stage === "service") return `아이디 ${lane.username}`;
+    if (stage === "password") return `비밀번호 그룹 ${lane.password_group}`;
+    if (stage === "mfa") return lane.mfa_enabled ? "MFA 켜짐" : "MFA 꺼짐";
+    return "—";
+  }
+
+  function drawOwner(layer) {
+    const g = el("g", { class: "owner" }, layer);
+    el("circle", { class: "fig", cx: 58, cy: CY - 26, r: 16 }, g);
+    el("path", { class: "fig", d: `M30 ${CY + 18} Q30 ${CY - 6} 58 ${CY - 6} Q86 ${CY - 6} 86 ${CY + 18} Z` }, g);
+    text(g, 58, CY + 46, "", "계정 소유자");
+    text(g, 58, CY + 68, "hint", `서비스 계정 ${lanesCount}개`);
+  }
+
+  function lengthAtX(path, x) {
+    let lo = 0, hi = path.getTotalLength();
+    for (let k = 0; k < 30; k++) { const m = (lo + hi) / 2; if (path.getPointAtLength(m).x < x) lo = m; else hi = m; }
+    return hi;
+  }
+
+  function render(profile) {
+    st.view = profile; st.clock = 0; st.doneAt = null; st.lanes = [];
+    svg.replaceChildren();
+    const lines = el("g", {}, svg), tokens = el("g", {}, svg), nodesLayer = el("g", {}, svg), labels = el("g", {}, svg);
+    drawOwner(nodesLayer);
+    let naturalEnd = 0;
+    D.profiles[profile].lanes.forEach((lane, i) => {
+      const y = TOP + GAP * i;
+      const path = el("path", {
+        class: "lane-path" + (lane.status === "error" ? " err" : ""),
+        d: `M${START_X} ${CY} C ${START_X + 60} ${CY} ${START_X + 60} ${y} ${START_X + 120} ${y} L ${STAGE_X.access} ${y}`,
+      }, lines);
+      const changed = new Set(lane.changes.map(c => c.stage));
+      const nodes = {};
+      for (const stage of STAGES) {
+        const x = STAGE_X[stage];
+        const g = el("g", { class: "node" + (changed.has(stage) ? " changed" : "") }, nodesLayer);
+        el("rect", { x: x - NODE_W / 2, y: y - NODE_H / 2, width: NODE_W, height: NODE_H, rx: 6 }, g);
+        const title = text(g, x, y - 6, "title", stage === "service" ? lane.service : STAGE_TITLE[stage]);
+        fit(title, NODE_W - 20);
+        const node = { g, sub: text(g, x, y + 19, "sub", "") };
+        setSub(node, initialSub(lane, stage));
+        nodes[stage] = node;
+      }
+      for (const c of lane.changes) {
+        const t = text(labels, STAGE_X[c.stage], y - NODE_H / 2 - 10, "change", "변경: " + c.text);
+        fit(t, LABEL_W);
+        if (c.detail) { const tip = el("title", {}, t); tip.textContent = c.detail; }
+      }
+      // 타임라인: 노드 앞 도착 → 확인(멈춤) → 통과 또는 최종 판정
+      const token = el("circle", { class: "token", r: 9, opacity: 0 }, tokens);
+      const visit = STAGES.slice(0, STAGES.indexOf(lane.stop_stage) + 1);
+      const steps = [];
+      let t = i * STAGGER, prev = 0;
+      for (const stage of visit) {
+        const len = lengthAtX(path, STAGE_X[stage] - NODE_W / 2 - 14);
+        const travel = Math.max(0, len - prev) / SPEED;
+        steps.push({ stage, from: prev, to: len, moveStart: t, arrive: t + travel, leave: t + travel + PAUSE[stage] });
+        t += travel + PAUSE[stage];
+        // 통과한 노드 뒤쪽 가장자리까지 이동(노드 아래로 지나감)
+        prev = lengthAtX(path, STAGE_X[stage] + NODE_W / 2);
+      }
+      naturalEnd = Math.max(naturalEnd, t);
+      st.lanes.push({ lane, y, nodes, token, path, steps, start: i * STAGGER, state: {}, reasonShown: false, finished: false });
+    });
+    st.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, TARGET / naturalEnd));
+    st.end = naturalEnd;
+    st.labels = labels;
+    document.getElementById("sentence").textContent = "";
+    document.getElementById("view-label").textContent = D.profiles[profile].label + " 설정";
+    draw();
+  }
+
+  function finalize(L) {
+    const lane = L.lane, node = L.nodes[lane.stop_stage];
+    let nodeCls, reasonCls, label;
+    if (lane.status === "error") { nodeCls = "err"; reasonCls = "err"; label = "요청 오류"; }
+    else if (!lane.consistent) { nodeCls = "warn"; reasonCls = "warn"; label = "확인 필요"; }
+    else if (lane.stop_stage === "access") { nodeCls = "success"; reasonCls = "success"; label = "비인가 접근 성공"; }
+    else { nodeCls = "blocked"; reasonCls = "block"; label = "차단"; }
+    node.g.classList.remove("checking", "passed");
+    node.g.classList.add(nodeCls);
+    setSub(node, label);
+    const r = text(st.labels, STAGE_X[lane.stop_stage], L.y + NODE_H / 2 + 24, "reason " + reasonCls, lane.reason);
+    fit(r, LABEL_W);
+    L.token.setAttribute("opacity", 0);
+    L.finished = true;
+  }
+
+  function passLabel(stage, lane) {
+    if (stage === "password") return "유출 정보와 일치";
+    if (stage === "mfa") return "MFA 없음 · 통과";
+    return initialSub(lane, stage);
+  }
+
+  function draw() {
+    const t = st.clock / st.scale;          // 자연 시간
+    let allDone = true;
+    for (const L of st.lanes) {
+      if (L.finished) continue;
+      let pos = null;
+      for (const s of L.steps) {
+        const node = L.nodes[s.stage];
+        if (t < s.moveStart) break;
+        if (t < s.arrive) {                 // 이동 중
+          pos = s.from + (s.to - s.from) * ((t - s.moveStart) / (s.arrive - s.moveStart || 1));
+          break;
+        }
+        if (t < s.leave) {                  // 노드 앞에서 확인 중
+          pos = s.to;
+          if (L.state[s.stage] !== "checking") { L.state[s.stage] = "checking"; node.g.classList.add("checking"); setSub(node, "확인 중…"); }
+          break;
+        }
+        if (s.stage === L.lane.stop_stage) { finalize(L); break; }
+        if (L.state[s.stage] !== "passed") {
+          L.state[s.stage] = "passed";
+          node.g.classList.remove("checking"); node.g.classList.add("passed");
+          setSub(node, passLabel(s.stage, L.lane));
+        }
+        // 통과: 다음 단계 이동으로 넘어간다(토큰은 노드 아래를 지나간다)
+      }
+      if (!L.finished) {
+        allDone = false;
+        if (pos === null) {
+          L.token.setAttribute("opacity", 0);   // 출발 전
+        } else {
+          const p = L.path.getPointAtLength(pos);
+          L.token.setAttribute("cx", p.x); L.token.setAttribute("cy", p.y);
+          L.token.setAttribute("opacity", 1);
+        }
+      }
+    }
+    if (allDone && st.doneAt === null) {
+      st.doneAt = st.clock;
+      const cur = D.profiles[st.view];
+      document.getElementById("sentence").textContent =
+        st.mode === "seq" && st.view === "after" ? D.compare_sentence : cur.sentence;
+    }
+    setState();
+  }
+
+  function finishedAll() { return st.doneAt !== null && !(st.mode === "seq" && st.view === "before"); }
+
+  function setState() {
+    let s;
+    if (finishedAll()) s = "재생 완료";
+    else if (st.doneAt !== null) s = "잠시 후 변경 후 설정 재생";
+    else s = st.playing ? "재생 중" : "일시정지";
+    document.getElementById("view-state").textContent = s;
+    document.getElementById("toggle").textContent = st.playing ? "일시정지" : "재생";
+    document.body.dataset.view = st.view;
+    document.body.dataset.state = finishedAll() ? "done" : (st.playing ? "playing" : "paused");
+  }
+
+  function tick(ts) {
+    if (st.playing) {
+      if (st.last !== null) st.clock += ts - st.last;
+      st.last = ts;
+      draw();
+      if (st.doneAt !== null) {
+        if (st.mode === "seq" && st.view === "before") {
+          if (st.clock - st.doneAt >= HOLD) render("after");
+        } else {
+          st.playing = false;
+          setState();
+        }
+      }
+    } else {
+      st.last = null;
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function start(mode) {
+    st.mode = mode;
+    document.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+    st.playing = true;
+    render(mode === "after" ? "after" : "before");
+  }
+
+  document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => start(b.dataset.mode)));
+  document.getElementById("toggle").addEventListener("click", () => {
+    if (st.playing) { st.playing = false; setState(); return; }
+    if (finishedAll()) { start(st.mode); return; }
+    st.playing = true; setState();
+  });
+  document.getElementById("replay").addEventListener("click", () => start(st.mode));
+
+  start("seq");
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<div class="backdrop">
+  <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="sim-title" aria-describedby="sim-desc" tabindex="-1">
+    <header class="head">
+      <div class="head-text">
+        <h2 id="sim-title">계정 보안 시뮬레이션</h2>
+        <p id="sim-desc" class="assume">동일한 유출 정보를 여러 서비스에 시도합니다 · 추가 인증 수단 없음 · 모의 인증 결과 재생(실제 서버 속도 아님)</p>
+      </div>
+      <div class="controls">
+        <div class="seg" role="group" aria-label="보기 선택">
+          <button type="button" data-mode="compare">결과 비교</button>
+          <button type="button" data-mode="before">과정 보기: 변경 전</button>
+          <button type="button" data-mode="after">과정 보기: 변경 후</button>
+        </div>
+        <div class="seg speed" role="group" aria-label="재생 배속">
+          <button type="button" data-speed="0.25">0.25×</button>
+          <button type="button" data-speed="0.5">0.5×</button>
+          <button type="button" data-speed="1">1×</button>
+          <button type="button" data-speed="1.5">1.5×</button>
+          <button type="button" data-speed="2">2×</button>
+        </div>
+        <button type="button" class="icon" id="toggle">
+          <svg viewBox="0 0 24 24" aria-hidden="true" class="i-pause"><path d="M8 5v14M16 5v14"/></svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true" class="i-play"><path class="fill" d="M8 5l12 7-12 7z"/></svg>
+        </button>
+        <button type="button" class="icon" id="step" aria-label="다음 단계" title="다음 단계(일시정지 중)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l9 7-9 7z" class="fill"/><path d="M18 5v14"/></svg>
+        </button>
+        <button type="button" class="icon" id="replay" aria-label="처음부터" title="처음부터">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path class="fill" d="M14.5 2.5 21 5l-2.2 6.2z"/></svg>
+        </button>
+        <button type="button" class="icon close" id="close" aria-label="시뮬레이션 종료" title="시뮬레이션 종료">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5L5 19"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <p class="banner" aria-live="polite">
+      <b id="view-label"></b>
+      <span class="phase" id="phase"></span>
+      <span id="view-state"></span>
+      <span id="change-note" class="change-note"></span>
+    </p>
+
+    <div class="work" id="work">
+      <div class="stage" id="stage">
+      <div class="radial" id="radial">
+        <svg class="wires" id="wires" aria-hidden="true"></svg>
+        <div class="side left" id="side-left"></div>
+        <div class="center" id="center">
+          <div class="hub" id="hub">
+            <p class="k">유출된 로그인 정보</p>
+            <p class="name" data-f="src-name"></p>
+            <p class="meta">아이디 <b class="mono" data-f="src-user"></b></p>
+            <p class="meta"><span data-f="src-pw"></span></p>
+          </div>
+        </div>
+        <div class="side right" id="side-right"></div>
+      </div>
+    </div>
+
+      <!-- 결과 비교: 두 설정의 최종 결과를 같은 서비스 같은 행으로 좌우 비교(애니메이션 없음) -->
+      <div class="results" id="results" hidden>
+        <p class="rs-note" id="rs-note"></p>
+        <div class="rs-wrap">
+          <table class="rs-table" id="rs-table"></table>
+        </div>
+        <p class="rs-sum" id="rs-sum" aria-live="polite"></p>
+      </div>
+
+      <!-- 오른쪽 고정 상세 패널(카드 선택 시) -->
+      <aside class="panel" id="panel" role="region" aria-label="계정 상세" hidden></aside>
+    </div>
+
+    <div class="foot" id="foot">
+      <p class="counts" aria-live="polite">
+        <span class="chip access"><span class="dotc"></span>계정 침해 <b id="c-success">0</b></span>
+        <span class="chip block"><span class="dotc"></span>로그인 시도 차단 <b id="c-blocked">0</b></span>
+        <span class="chip warn" id="c-error-wrap" hidden><span class="dotc"></span>확인 필요 <b id="c-error">0</b></span>
+      </p>
+      <p class="compare" id="compare"></p>
+    </div>
+
+    <div class="confirm-bg" id="confirm" hidden>
+      <div class="confirm" role="alertdialog" aria-modal="true" aria-labelledby="confirm-q">
+        <p id="confirm-q">시뮬레이션을 종료하겠습니까?</p>
+        <div class="confirm-btns">
+          <button type="button" id="keep">계속 보기</button>
+          <button type="button" id="quit" class="danger">종료</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

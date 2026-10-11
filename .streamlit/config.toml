@@ -1,18 +1,18 @@
 [theme]
-# 차분한 보안 실습 환경: 어두운 남색 바탕 + 절제된 청록 강조
+# 사이버보안 분위기 + 조금 더 밝은 슬레이트·네이비 대비
 base = "dark"
-primaryColor = "#13786d"
-backgroundColor = "#0f1b2d"
-secondaryBackgroundColor = "#172a42"
-textColor = "#e6edf5"
-linkColor = "#5ccfc0"
-borderColor = "#34506f"
+primaryColor = "#60A5FA"
+backgroundColor = "#152033"
+secondaryBackgroundColor = "#273950"
+textColor = "#F4F7FB"
+linkColor = "#60A5FA"
+borderColor = "#465B75"
 font = "'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif"
 headingFont = "'Malgun Gothic', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif"
-baseFontSize = 17
-headingFontSizes = ["28px", "22px", "18px"]
+baseFontSize = 19
+headingFontSizes = ["42px", "32px", "22px"]
 headingFontWeights = [700, 700, 700]
-baseRadius = "6px"
+baseRadius = "8px"
 showWidgetBorder = true
 
 [client]

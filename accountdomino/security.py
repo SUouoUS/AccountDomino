@@ -7,6 +7,12 @@ import secrets
 
 ITERATIONS = 120_000
 SALT_BYTES = 16
+ALGORITHM = "PBKDF2-HMAC-SHA256"
+
+
+def algo_info() -> dict:
+    """실제로 쓰는 해시 알고리즘 정보(교육용 표시). 평문·비밀값은 포함하지 않는다."""
+    return {"name": ALGORITHM, "iterations": ITERATIONS, "salt_bytes": SALT_BYTES}
 
 
 def hash_password(password: str, salt: bytes | None = None) -> tuple[str, str]:

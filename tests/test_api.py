@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 from accountdomino import config
 from accountdomino.api import app
 from accountdomino.client import DominoClient, ExternalRequestBlocked
+from accountdomino.scenarios import build_scenario
+from accountdomino.simulation import expected_result, leaked_credential, target_services
 
 
 @pytest.fixture
@@ -13,25 +15,34 @@ def client(db_file):
 
 def test_services(client):
     ids = [s["service_id"] for s in client.get("/services").json()]
-    assert ids == ["mail", "shop", "community", "school"]
+    assert ids == list(config.SERVICES) and len(ids) == config.MAX_ACCOUNT_COUNT
 
 
-def test_login_flow_and_logs(client):
-    assert client.post("/scenarios/s1/load").status_code == 200
+@pytest.mark.parametrize("count", [config.DEFAULT_ACCOUNT_COUNT, config.MAX_ACCOUNT_COUNT])
+def test_login_flow_matches_settings_and_logs(client, count):
+    assert client.post("/scenarios/s1/load", params={"count": count}).status_code == 200
+    accounts = client.get("/profiles/after/accounts").json()
+    assert accounts == build_scenario("s1", count)["after"]
+    before = client.get("/profiles/before/accounts").json()
+    username, password = leaked_credential(before, "community")
     run_id = client.post("/runs", json={
-        "profile": "after", "leaked_service_id": "community", "leaked_username": "student01"}).json()["run_id"]
-    results = {}
-    for sid in config.SERVICES:
+        "profile": "after", "leaked_service_id": "community", "leaked_username": username}).json()["run_id"]
+    by_service = {a["service_id"]: a for a in accounts}
+    targets = target_services(accounts, "community")
+    for sid in targets:
         r = client.post(f"/services/{sid}/login", json={
-            "profile": "after", "username": "student01", "password": "Domino-A!2024", "run_id": run_id})
+            "profile": "after", "username": username, "password": password, "run_id": run_id})
         assert r.status_code == 200
-        results[sid] = r.json()["result"]
-    # 학교는 다른 비밀번호(C)라 MFA 단계 전에 비밀번호 불일치로 멈춘다
-    assert results == {"mail": "MFA 차단", "shop": "접근 성공", "community": "접근 성공", "school": "비밀번호 불일치"}
+        assert r.json()["result"] == expected_result(by_service[sid], username, password)
 
     logs = client.get(f"/runs/{run_id}/logs").json()
-    assert len(logs) == 4
+    assert len(logs) == count - 1
     assert all("Domino-" not in str(log) for log in logs)
+
+
+@pytest.mark.parametrize("count", [config.MIN_ACCOUNT_COUNT - 1, config.MAX_ACCOUNT_COUNT + 1])
+def test_load_scenario_count_is_range_checked(client, count):
+    assert client.post("/scenarios/s1/load", params={"count": count}).status_code == 422
 
 
 def test_unknown_service_returns_404(client):

@@ -62,3 +62,46 @@ def test_login_is_logged_without_password(accounts):
     assert len(logs) == 1
     assert logs[0]["result"] == config.RESULT_SUCCESS
     assert all("Domino-" not in str(v) for v in logs[0].values())
+
+
+def test_authenticate_steps_records_only_performed_steps(conn):
+    auth.save_accounts(conn, "before", [
+        AccountSetting("mail", "u", "A", True),      # 아이디 일치 + MFA
+        AccountSetting("shop", "u", "A", False),     # 아이디 일치 + 성공
+        AccountSetting("school", "other", "A", False),  # 아이디 불일치
+    ])
+    pw = password_for("A", "mail")
+    # 아이디 불일치 → 비밀번호·MFA 미수행
+    r = auth.authenticate_steps(conn, "before", "school", "u", pw)
+    assert r["result"] == config.RESULT_MISMATCH
+    assert r["steps"] == {"try": "done", "id": "nomatch", "password": "skipped", "mfa": "skipped"}
+    assert r["verified"] is False and r["target_hash"] and r["target_salt"]
+    # 비밀번호 불일치 → MFA 미수행
+    r = auth.authenticate_steps(conn, "before", "shop", "u", "WRONG-VALUE")
+    assert r["result"] == config.RESULT_MISMATCH
+    assert r["steps"]["id"] == "match" and r["steps"]["password"] == "nomatch" and r["steps"]["mfa"] == "skipped"
+    # 비밀번호 일치 + MFA 켜짐 → 차단
+    r = auth.authenticate_steps(conn, "before", "mail", "u", pw)
+    assert r["result"] == config.RESULT_MFA_BLOCKED and r["steps"]["mfa"] == "blocked" and r["verified"] is True
+    # 비밀번호 일치 + MFA 꺼짐 → 성공
+    r = auth.authenticate_steps(conn, "before", "shop", "u", pw)
+    assert r["result"] == config.RESULT_SUCCESS and r["steps"]["mfa"] == "off"
+
+
+def test_custom_group_password_is_used_for_real_auth(conn):
+    # 그룹 A 에 실습용 값 SENTINEL 을 직접 저장 → 그 값으로만 인증
+    auth.save_accounts(conn, "before", [
+        AccountSetting("mail", "u", "A", False, password="SENTINEL-PW"),
+        AccountSetting("shop", "u", "A", False, password="SENTINEL-PW"),   # 같은 값 → 같은 비밀번호
+        AccountSetting("school", "u", "B", False, password="OTHER-PW"),    # 다른 값
+    ])
+    assert auth.authenticate(conn, "before", "mail", "u", "SENTINEL-PW") == config.RESULT_SUCCESS
+    assert auth.authenticate(conn, "before", "shop", "u", "SENTINEL-PW") == config.RESULT_SUCCESS  # 다른 그룹 같은 값
+    assert auth.authenticate(conn, "before", "school", "u", "SENTINEL-PW") == config.RESULT_MISMATCH
+    assert auth.authenticate(conn, "before", "mail", "u", password_for("A", "mail")) == config.RESULT_MISMATCH
+
+
+def test_steps_record_has_no_plaintext(conn):
+    auth.save_accounts(conn, "before", [AccountSetting("mail", "u", "A", False, password="SENTINEL-PW")])
+    r = auth.authenticate_steps(conn, "before", "mail", "u", "SENTINEL-PW")
+    assert "SENTINEL-PW" not in str(r)

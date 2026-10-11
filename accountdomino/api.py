@@ -1,14 +1,14 @@
-"""모의 인증 서버. 하나의 로컬 서버가 service_id 로 메일·쇼핑·커뮤니티·학교를 구분한다."""
+"""모의 인증 서버. 하나의 로컬 서버가 service_id 로 메일·쇼핑·커뮤니티·학교 등 가상 서비스를 구분한다."""
 from __future__ import annotations
 
 from collections.abc import Iterator
 from typing import Literal
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
 from . import auth, config, db
-from .scenarios import PASSWORD_GROUPS, SCENARIOS
+from .scenarios import PASSWORD_GROUPS, SCENARIOS, build_scenario
 
 Profile = Literal["before", "after"]
 
@@ -29,6 +29,7 @@ class AccountIn(BaseModel):
     username: str
     password_group: str
     mfa_enabled: bool = False
+    password: str | None = None   # 실습용 평문(있으면 이 값으로 해시). 로컬 전용, 저장 안 함.
 
 
 class LoginIn(BaseModel):
@@ -70,13 +71,18 @@ def scenarios() -> list[dict]:
 
 
 @app.post("/scenarios/{scenario_id}/load")
-def load_scenario(scenario_id: str, conn=Depends(get_conn)) -> dict:
+def load_scenario(
+    scenario_id: str,
+    count: int = Query(config.DEFAULT_ACCOUNT_COUNT, ge=config.MIN_ACCOUNT_COUNT, le=config.MAX_ACCOUNT_COUNT),
+    conn=Depends(get_conn),
+) -> dict:
     sc = SCENARIOS.get(scenario_id)
     if sc is None:
         raise HTTPException(404, f"알 수 없는 시나리오: {scenario_id}")
+    profiles = build_scenario(scenario_id, count)
     for profile in config.PROFILES:
-        auth.save_accounts(conn, profile, [auth.AccountSetting(**a) for a in sc[profile]])
-    return {"loaded": scenario_id, "leaked_service_id": sc["leaked_service_id"]}
+        auth.save_accounts(conn, profile, [auth.AccountSetting(**a) for a in profiles[profile]])
+    return {"loaded": scenario_id, "count": count, "leaked_service_id": sc["leaked_service_id"]}
 
 
 @app.get("/profiles/{profile}/accounts")
@@ -106,8 +112,15 @@ def create_run(body: RunIn, conn=Depends(get_conn)) -> dict:
 @app.post("/services/{service_id}/login")
 def login(service_id: str, body: LoginIn, conn=Depends(get_conn)) -> dict:
     _check_service(service_id)
-    result = auth.login_and_log(conn, body.profile, service_id, body.username, body.password, body.run_id)
-    return {"service_id": service_id, "username": body.username, "result": result}
+    rec = auth.login_and_log(conn, body.profile, service_id, body.username, body.password, body.run_id)
+    full = rec["target_hash"]
+    return {
+        "service_id": service_id, "username": body.username, "result": rec["result"],
+        "steps": rec["steps"], "verified": rec["verified"], "mfa_enabled": rec["mfa_enabled"],
+        "mfa_checked": rec["steps"]["mfa"] in ("blocked", "off"),
+        "hash_full": full, "hash_short": (full[:12] if full else None), "salt": rec["target_salt"],
+        "algo": rec["algo"],
+    }
 
 
 @app.get("/runs/{run_id}/logs")

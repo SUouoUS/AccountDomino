@@ -36,8 +36,8 @@ class DominoClient:
     def scenarios(self) -> list[dict]:
         return self._request("GET", "/scenarios")
 
-    def load_scenario(self, scenario_id: str) -> dict:
-        return self._request("POST", f"/scenarios/{scenario_id}/load")
+    def load_scenario(self, scenario_id: str, count: int = config.DEFAULT_ACCOUNT_COUNT) -> dict:
+        return self._request("POST", f"/scenarios/{scenario_id}/load", params={"count": count})
 
     def accounts(self, profile: str) -> list[dict]:
         return self._request("GET", f"/profiles/{profile}/accounts")
